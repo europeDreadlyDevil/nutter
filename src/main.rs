@@ -8,11 +8,16 @@ use dialoguer::{Input, Select};
 use dialoguer::theme::ColorfulTheme;
 use crate::cli::{NutterAddSubcommand, NutterCommand, CLI};
 use anyhow::{Result};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use include_dir::{include_dir, Dir};
 use nutt_conf_parser::{NuttConfig, ServiceConfig};
+use tokio::join;
 use walkdir::WalkDir;
+use crate::dockerfile_builder::DockerfileBuilder;
 
 mod cli;
+mod dockerfile_builder;
 
 static MAIN_TEMPLATE_DIR: Dir = include_dir!("templates/services");
 static SERVICE_TEMPLATE_DIR: Dir = include_dir!("templates/service_template");
@@ -115,10 +120,13 @@ async fn main() -> Result<()> {
                         toml::to_string(&conf)?.as_bytes()
                     )?;
 
-                    let services_path = conf_path.parent().unwrap().join("services").join(&name);
-                    create_dir(&services_path)?;
+                    let service_path = conf_path.parent().unwrap().join("services").join(&name);
+                    create_dir(&service_path)?;
 
-                    SERVICE_TEMPLATE_DIR.extract(services_path)?;
+                    SERVICE_TEMPLATE_DIR.extract(service_path.clone())?;
+
+                    let dockerfile_content = DockerfileBuilder::new(name);
+                    File::create(service_path.join("Dockerfile"))?.write_all(dockerfile_content.build().as_bytes())?;
                 }
             }
         }
@@ -128,9 +136,7 @@ async fn main() -> Result<()> {
                     .args(["up"])
                     .spawn()
             });
-            loop {
-
-            }
+            loop {}
         }
     }
     Ok(())
